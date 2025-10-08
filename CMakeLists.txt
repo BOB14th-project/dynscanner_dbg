@@ -35,7 +35,9 @@ endif()
 
 target_compile_features(dynscanner PUBLIC cxx_std_20)
 
-target_link_libraries(dynscanner PRIVATE pthread)
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_link_libraries(dynscanner PRIVATE pthread)
+endif()
 
 add_executable(dynscanner_cli src/main.cpp)
 
