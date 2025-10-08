@@ -11,6 +11,11 @@
 * 공통 `DebugSession` 팩토리(`DebugSession::Launch`)와 CLI 예제(`dynscanner_cli`)를 추가하였다.
   * `dynscanner_cli --target <실행파일> [-- 인자...]`로 타깃 프로그램을 실행하고 이벤트 로그를 확인할 수 있다.
 
+* 메모리 접근 및 브레이크포인트 조작 API를 확장하였다.
+  * `DebugSession::read_memory`/`write_memory`로 원격 프로세스를 바이트 단위로 읽고 쓸 수 있다.
+  * Linux x86/x86-64 환경에서 `DebugSession::set_breakpoint`/`remove_breakpoint`로 0xCC 소프트웨어 브레이크포인트를 관리한다.
+  * 다른 아키텍처 전용 트랩 명령어와 PC 보정 로직은 후속 구현 항목이다.
+
 ### 빌드 방법 (Linux)
 
 ```bash

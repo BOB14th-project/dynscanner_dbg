@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -48,6 +49,12 @@ public:
     virtual bool wait_for_event(DebugEvent& event,
                                 std::chrono::milliseconds timeout) = 0;
     virtual bool continue_event(std::int64_t tid, std::int64_t signal = 0) = 0;
+    virtual bool read_memory(std::uint64_t address, void* buffer,
+                             std::size_t size) = 0;
+    virtual bool write_memory(std::uint64_t address, const void* buffer,
+                              std::size_t size) = 0;
+    virtual bool set_breakpoint(std::uint64_t address) = 0;
+    virtual bool remove_breakpoint(std::uint64_t address) = 0;
     virtual bool terminate() = 0;
 
     static std::unique_ptr<DebugSession> Launch(const LaunchOptions& options,

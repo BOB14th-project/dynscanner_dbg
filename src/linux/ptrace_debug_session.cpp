@@ -8,8 +8,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <csignal>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
@@ -159,6 +161,153 @@ bool PtraceDebugSession::continue_event(std::int64_t tid, std::int64_t signal) {
                reinterpret_cast<void*>(signal)) != 0) {
         return false;
     }
+    return true;
+}
+
+bool PtraceDebugSession::read_memory(std::uint64_t address, void* buffer,
+                                     std::size_t size) {
+    if (!active_ || buffer == nullptr) {
+        return false;
+    }
+
+    std::size_t offset = 0;
+    auto* out = static_cast<std::uint8_t*>(buffer);
+    while (offset < size) {
+        const std::uint64_t current_address = address + offset;
+        const std::uint64_t word_address =
+            current_address & ~(static_cast<std::uint64_t>(sizeof(long)) - 1);
+        const std::size_t byte_offset =
+            static_cast<std::size_t>(current_address - word_address);
+
+        errno = 0;
+        unsigned long word = ptrace(PTRACE_PEEKDATA, pid_,
+                                     reinterpret_cast<void*>(word_address),
+                                     nullptr);
+        if (errno != 0 && word == static_cast<unsigned long>(-1)) {
+            return false;
+        }
+
+        const std::size_t bytes_available = sizeof(long) - byte_offset;
+        const std::size_t bytes_to_copy =
+            std::min(bytes_available, size - offset);
+        for (std::size_t i = 0; i < bytes_to_copy; ++i) {
+            const std::size_t shift = (byte_offset + i) * 8;
+            out[offset + i] = static_cast<std::uint8_t>(
+                (word >> shift) & static_cast<unsigned long>(0xFF));
+        }
+
+        offset += bytes_to_copy;
+    }
+
+    return true;
+}
+
+bool PtraceDebugSession::write_memory(std::uint64_t address, const void* buffer,
+                                      std::size_t size) {
+    if (!active_ || buffer == nullptr) {
+        return false;
+    }
+
+    std::size_t offset = 0;
+    const auto* in = static_cast<const std::uint8_t*>(buffer);
+    while (offset < size) {
+        const std::uint64_t current_address = address + offset;
+        const std::uint64_t word_address =
+            current_address & ~(static_cast<std::uint64_t>(sizeof(long)) - 1);
+        const std::size_t byte_offset =
+            static_cast<std::size_t>(current_address - word_address);
+
+        errno = 0;
+        unsigned long word = ptrace(PTRACE_PEEKDATA, pid_,
+                                     reinterpret_cast<void*>(word_address),
+                                     nullptr);
+        if (errno != 0 && word == static_cast<unsigned long>(-1)) {
+            return false;
+        }
+
+        const std::size_t bytes_available = sizeof(long) - byte_offset;
+        const std::size_t bytes_to_write =
+            std::min(bytes_available, size - offset);
+        for (std::size_t i = 0; i < bytes_to_write; ++i) {
+            const std::size_t shift = (byte_offset + i) * 8;
+            const unsigned long mask =
+                static_cast<unsigned long>(0xFF) << shift;
+            word &= ~mask;
+            word |= static_cast<unsigned long>(in[offset + i]) << shift;
+        }
+
+        if (ptrace(PTRACE_POKEDATA, pid_,
+                   reinterpret_cast<void*>(word_address),
+                   reinterpret_cast<void*>(word)) != 0) {
+            return false;
+        }
+
+        offset += bytes_to_write;
+    }
+
+    return true;
+}
+
+bool PtraceDebugSession::set_breakpoint(std::uint64_t address) {
+    if (!active_) {
+        return false;
+    }
+
+#if defined(__x86_64__) || defined(__i386__)
+    if (breakpoints_.find(address) != breakpoints_.end()) {
+        return true;
+    }
+
+    const std::uint64_t word_address =
+        address & ~(static_cast<std::uint64_t>(sizeof(long)) - 1);
+    const std::uint8_t offset =
+        static_cast<std::uint8_t>(address - word_address);
+
+    errno = 0;
+    unsigned long word = ptrace(PTRACE_PEEKTEXT, pid_,
+                                 reinterpret_cast<void*>(word_address),
+                                 nullptr);
+    if (errno != 0 && word == static_cast<unsigned long>(-1)) {
+        return false;
+    }
+
+    BreakpointInfo info{word_address, word, offset};
+    const unsigned long trap_opcode = 0xCCUL;
+    const std::size_t shift = static_cast<std::size_t>(offset) * 8;
+    const unsigned long mask = static_cast<unsigned long>(0xFF) << shift;
+    word = (word & ~mask) | (trap_opcode << shift);
+
+    if (ptrace(PTRACE_POKETEXT, pid_, reinterpret_cast<void*>(word_address),
+               reinterpret_cast<void*>(word)) != 0) {
+        return false;
+    }
+
+    breakpoints_.emplace(address, info);
+    return true;
+#else
+    (void)address;
+    return false;
+#endif
+}
+
+bool PtraceDebugSession::remove_breakpoint(std::uint64_t address) {
+    if (!active_) {
+        return false;
+    }
+
+    auto it = breakpoints_.find(address);
+    if (it == breakpoints_.end()) {
+        return false;
+    }
+
+    const BreakpointInfo& info = it->second;
+    if (ptrace(PTRACE_POKETEXT, pid_,
+               reinterpret_cast<void*>(info.word_address),
+               reinterpret_cast<void*>(info.original_data)) != 0) {
+        return false;
+    }
+
+    breakpoints_.erase(it);
     return true;
 }
 
