@@ -20,5 +20,17 @@ std::unique_ptr<DebugSession> DebugSession::Launch(const LaunchOptions& options,
 #endif
 }
 
+std::unique_ptr<DebugSession> DebugSession::Attach(std::int64_t pid,
+                                                   std::string* error) {
+#if defined(__linux__)
+    return PtraceDebugSession::Attach(static_cast<pid_t>(pid), error);
+#else
+    if (error) {
+        *error = "현재 플랫폼에서는 디버그 세션 attach 기능이 지원되지 않습니다.";
+    }
+    return nullptr;
+#endif
+}
+
 }  // namespace dynscanner
 

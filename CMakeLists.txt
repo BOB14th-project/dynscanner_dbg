@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(dynscanner STATIC
     src/core/debug_session.cpp
+    src/core/analyzer.cpp
 )
 
 target_include_directories(dynscanner
